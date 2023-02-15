@@ -72,7 +72,7 @@ pipeline {
         steps {
             script{
 
-                code = sh(script:'curl --location --silent --output /dev/null --write-out "%{http_code}\n" http://localhost:8085', returnStdout: true).trim()
+                code = sh(script:'curl --location --silent --output /dev/null --write-out "%{http_code}\n" http://localhost:8080', returnStdout: true).trim()
                 echo "HTTP response status code: $code"
             }           
         }
