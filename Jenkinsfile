@@ -1,73 +1,102 @@
 pipeline {
-  agent {
-    kubernetes {
-      yaml '''
-        apiVersion: v1
-        kind: Pod
-        spec:
-          containers:
-          - name: maven
-            image: maven:alpine
-            command:
-            - cat
-            tty: true
-          - name: docker
-            image: docker:latest
-            command:
-            - cat
-            tty: true
-            volumeMounts:
-             - mountPath: /var/run/docker.sock
-               name: docker-sock
-          volumes:
-          - name: docker-sock
-            hostPath:
-              path: /var/run/docker.sock    
-        '''
-    }
-  }
+    agent any
+
+  environment 
+  {
+    //imagename = "ismailtest"
+    //ecrurl = "https://828556645578.dkr.ecr.us-east-2.amazonaws.com"
+    //ecrcredentials = "ecr:us-east-2:ecr-ismail"
+    //dockerImage = ''
+    PROJECT     = 'tooling'
+    ECRURL      = '350100602815.dkr.ecr.eu-west-2.amazonaws.com/tooling'
+    DEPLOY_TO   = 'jenkins-ecr'
+  } 
+
+
   stages {
-    stage('Clone') {
-      steps {
-        container('maven') {
-          git branch: 'main', changelog: false, poll: false, url: 'https://mohdsabir-cloudside@bitbucket.org/mohdsabir-cloudside/java-app.git'
+
+    stage("Initial cleanup") {
+        steps {
+        dir("${WORKSPACE}") {
+            deleteDir()
         }
-      }
-    }  
-    stage('Build-Jar-file') {
-      steps {
-        container('maven') {
-          sh 'mvn package'
         }
+    }
+
+    stage('Checkout')
+    {
+      steps {
+      checkout scmGit(
+        branches: [[name: '*/jenkins-ecr']], 
+        extensions: [], 
+        userRemoteConfigs: [[credentialsId: 'af85cebf-4a4d-4081-90a9-b02c6a8ac15b', url: 'https://github.com/earchibong/tooling.git']]
+        )
+        
       }
     }
-    stage('Build-Docker-Image') {
-      steps {
-        container('docker') {
-          sh 'docker build -t dareyregistry/java-app:latest .'
+
+    stage('Build preparations')
+    {
+        steps
+          {
+              script 
+                {
+                    // calculate GIT lastest commit short-hash
+                    gitCommitHash = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    shortCommitHash = gitCommitHash.take(7)
+                    // calculate a sample version tag
+                    VERSION = shortCommitHash
+                    // set the build display name
+                    currentBuild.displayName = "#${BUILD_ID}-${VERSION}"
+                    IMAGE = "$PROJECT:$VERSION"
+                }
+            }
+    }   
+
+    stage('Build') 
+    {
+        steps {
+            echo 'Build Dockerfile....'
+            script {
+                //sh("eval \$(aws ecr get-login --no-include-email --region eu-west-2 | sed 's|https://||')") 
+                sh "docker build --network=host -t $IMAGE ."
+                //docker.withRegistry("https://$ECRURL"){
+                //docker.image("$IMAGE").push("dev-staging-$BUILD_NUMBER")
+                //}
+            }
         }
-      }
     }
-    stage('Login-Into-Docker') {
-      steps {
-        container('docker') {
-          sh 'docker login -u dareyregistry -p Phartion001ng'
-      }
+
+    stage('Test') 
+    {
+        steps {
+            script{
+
+                code = sh(script:'curl --location --silent --output /dev/null --write-out "%{http_code}\n" http://localhost:8085', returnStdout: true).trim()
+                echo "HTTP response status code: $code"
+            }           
+        }
     }
+
+    stage('Deploy') 
+    {
+        steps {
+            script {
+                sh("eval \$(aws ecr get-login --no-include-email --region eu-west-2 | sed 's|https://||')") 
+                //sh "docker build --network=host -t $IMAGE ."
+                docker.withRegistry("https://$ECRURL"){
+                docker.image("$IMAGE").push("$BUILD_NUMBER-latest")
+                }
+            }
+        }
     }
-     stage('Push-Images-Docker-to-DockerHub') {
-      steps {
-        container('docker') {
-          sh 'docker push dareyregistry/java-app:latest'
-      }
-    }
-     }
   }
-    post {
-      always {
-        container('docker') {
-          sh 'docker logout'
-      }
-      }
+ 
+    post
+    {
+        always
+        {
+            sh "docker rmi -f $IMAGE "
+        }
     }
-}
+} //end of pipeline

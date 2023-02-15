@@ -1,0 +1,35 @@
+version: "3"
+services:
+
+  tooling_frontend:
+    build: .
+    depends_on:
+      - db
+    ports:
+      - "5000:80"
+    volumes:
+      - tooling_frontend:/var/www/html
+
+  
+    
+
+  db:
+    image: mysql:5.7
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: toolingdb
+      MYSQL_USER: libby
+      MYSQL_PASSWORD: devopspbl
+      MYSQL_ROOT_PASSWORD: devopspbl   
+    volumes:
+      - db:/var/lib/mysql
+      - .datadump.sql/:/docker-entrypoint-initdb.d/datadump.sql
+    ports :
+      - "3306:3306" 
+
+
+  
+volumes:
+  tooling_frontend:
+  db:
